@@ -1,9 +1,9 @@
 import Vapor
 
-struct OpenAPIRequestInjectionMiddleware: AsyncMiddleware {
+struct OpenAPIRequestInjectionMiddleware: Middleware {
   func respond(
     to request: Request,
-    chainingTo responder: AsyncResponder
+    chainingTo responder: any Responder
   ) async throws -> Response {
     try await CurrentContext.$request.withValue(request) {
       try await responder.respond(to: request)

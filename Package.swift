@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.4
 
 import PackageDescription
 
@@ -6,28 +6,27 @@ let swiftSettings: [SwiftSetting] = [
   /// https://github.com/apple/swift-evolution/blob/main/proposals/0335-existential-any.md
   /// Require `any` for existential types.
   .enableUpcomingFeature("ExistentialAny"),
-  /// Introduced in Swift 5.9, enables strict concurrency checks as planned for Swift 6.
-  /// Accepted values are `minimal`, `targeted` and `complete`.
-  /// `minimal` is the default in all projects, if not specified.
-  .enableExperimentalFeature("StrictConcurrency=complete"),
+  /// https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md
+  /// Make `async` functions inherit their caller's isolation. Vapor enables this too, and the two
+  /// modules have to agree: otherwise passing an `async` closure to a Vapor API crosses an
+  /// isolation boundary and is rejected.
+  .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
 ]
 
 let package = Package(
   name: "swift-openapi-vapor",
   platforms: [
-    .macOS(.v10_15),
-    .iOS(.v13),
-    .tvOS(.v13),
-    .watchOS(.v6),
+    .macOS("26.2"),
+    .iOS("26.2"),
+    .tvOS("26.2"),
+    .watchOS("26.2"),
   ],
   products: [
     .library(name: "OpenAPIVapor", targets: ["OpenAPIVapor"])
   ],
   dependencies: [
-    .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.11.0", traits: []),
-    .package(url: "https://github.com/vapor/vapor.git", from: "4.106.7"),
-    .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0"),
-    .package(url: "https://github.com/apple/swift-nio-extras", from: "1.22.0"),
+    .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.1", traits: []),
+    .package(url: "https://github.com/vapor/vapor.git", exact: "5.0.0-beta.2"),
   ],
   targets: [
     .target(
@@ -35,8 +34,6 @@ let package = Package(
       dependencies: [
         .product(name: "Vapor", package: "vapor"),
         .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
-        .product(name: "Atomics", package: "swift-atomics"),
-        .product(name: "NIOHTTPTypesHTTP1", package: "swift-nio-extras"),
       ],
       swiftSettings: swiftSettings
     ),
@@ -44,7 +41,7 @@ let package = Package(
       name: "OpenAPIVaporTests",
       dependencies: [
         "OpenAPIVapor",
-        .product(name: "XCTVapor", package: "vapor"),
+        .product(name: "VaporTesting", package: "vapor"),
       ],
       swiftSettings: swiftSettings
     ),

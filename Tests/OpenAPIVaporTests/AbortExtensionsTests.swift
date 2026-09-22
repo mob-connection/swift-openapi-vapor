@@ -13,28 +13,32 @@
 
 import HTTPTypes
 import OpenAPIRuntime
-import XCTVapor
+import Testing
+import Vapor
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
 
 @testable import OpenAPIVapor
 
-final class AbortExtensionsTests: XCTestCase {
-  func testConversion() async throws {
+struct AbortExtensionsTests {
+  @Test
+  func conversion() async throws {
     let error = Abort(.unauthorized) as any HTTPResponseConvertible
-    XCTAssertEqual(error.httpStatus, .unauthorized)
-    XCTAssertEqual(
-      error.httpHeaderFields,
-      [
+    #expect(error.httpStatus == .unauthorized)
+    #expect(
+      error.httpHeaderFields == [
         .contentType: "application/json"
       ])
-    let body = try XCTUnwrap(error.httpBody)
+    let body = try #require(error.httpBody)
     let bodyString = try await String(collecting: body, upTo: 1024)
     struct ExpectedValue: Decodable, Equatable {
       var status: Int
       var title: String
     }
-    XCTAssertEqual(
-      try JSONDecoder().decode(ExpectedValue.self, from: Data(bodyString.utf8)),
-      ExpectedValue(status: 401, title: "401: Unauthorized")
-    )
+    let decoded = try JSONDecoder().decode(ExpectedValue.self, from: Data(bodyString.utf8))
+    #expect(decoded == ExpectedValue(status: 401, title: "401: Unauthorized"))
   }
 }

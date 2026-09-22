@@ -12,22 +12,26 @@
 //===----------------------------------------------------------------------===//
 
 import HTTPTypes
-import NIOHTTPTypesHTTP1
 import OpenAPIRuntime
 import Vapor
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
 
-// This @retroactive conformance is okay as it assumes that Vapor v4 will never gain
+// This @retroactive conformance is okay as it assumes that Vapor v5 will never gain
 // a direct dependency on Swift OpenAPI Runtime.
 // swift-format-ignore: AvoidRetroactiveConformances
 extension Abort: @retroactive HTTPResponseConvertible {
   public var httpStatus: HTTPResponse.Status {
-    .init(code: Int(status.code))
+    status
   }
 
   public var httpHeaderFields: HTTPTypes.HTTPFields {
-    var headerFields: HTTPTypes.HTTPFields = .init(headers, splitCookie: false)
-    headerFields[.contentType] = "application/json"
-    return headerFields
+    var headers = headers
+    headers[.contentType] = "application/json"
+    return headers
   }
 
   public var httpBody: OpenAPIRuntime.HTTPBody? {
@@ -35,19 +39,19 @@ extension Abort: @retroactive HTTPResponseConvertible {
       title: "\(identifier): \(reason)",
       status: Int(status.code)
     )
-    var buffer = ByteBuffer()
-    var headers = HTTPHeaders()
+    var buffer = Data()
+    var headers = HTTPFields()
     do {
-      if let encoder = try? ContentConfiguration.global.requireEncoder(for: .json) {
-        try encoder.encode(problem, to: &buffer, headers: &headers)
+      if let encoder = try? ContentConfiguration.default().requireEncoder(for: .json) {
+        try encoder.encode(problem, to: &buffer, headers: &headers, userInfo: [:])
       } else {
-        try fallbackJSONEncoder.encode(problem, to: &buffer, headers: &headers)
+        try fallbackJSONEncoder.encode(problem, to: &buffer, headers: &headers, userInfo: [:])
       }
     } catch {
       // We don't have a great place to communicate an encoding error here.
       return nil
     }
-    return .init(buffer.readableBytesView)
+    return .init(buffer)
   }
 }
 
