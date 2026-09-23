@@ -13,6 +13,7 @@
 
 import HTTPTypes
 import OpenAPIRuntime
+import RoutingKit
 import Synchronization
 import Testing
 import Vapor
@@ -190,16 +191,19 @@ struct VaporTransportTests {
     }
   }
 
-  /// A chunked upload arrives without `Content-Length`. The transport collects it first, so the
-  /// length it reports is the one it holds, not the one the client declared.
+  /// A chunked upload arrives without `Content-Length`, and nothing collects it up front, so the
+  /// length is `.unknown`. The bytes still have to arrive in full.
   @Test
-  func chunkedRequestBodyReportsCollectedLength() async throws {
+  func chunkedRequestBodyStreamsWithUnknownLength() async throws {
     try await withApp { app in
       let openAPITransport = VaporTransport(routesBuilder: app)
-      let seenLength = Mutex<HTTPBody.Length?>(nil)
+      let seen = Mutex<(length: HTTPBody.Length, bytes: [UInt8])?>(nil)
       try openAPITransport.register(
         { _, body, _ in
-          seenLength.withLock { $0 = body?.length }
+          if let body {
+            let bytes = try await [UInt8](collecting: body, upTo: .max)
+            seen.withLock { $0 = (body.length, bytes) }
+          }
           return (HTTPTypes.HTTPResponse(status: .ok), nil)
         },
         method: .post,
@@ -216,7 +220,140 @@ struct VaporTransportTests {
         #expect(res.status == .ok)
       }
 
-      #expect(seenLength.withLock { $0 } == .known(5))
+      let captured = seen.withLock { $0 }
+      #expect(captured?.length == .unknown)
+      #expect(captured?.bytes == [UInt8]("hello".utf8))
+    }
+  }
+
+  /// A chunked upload declares no length, so the up-front check cannot help and the ceiling has to
+  /// be enforced as the bytes arrive. The declared-length tests never reach that counter.
+  @Test
+  func chunkedRequestBodyOverTheCeilingIsRejectedMidStream() async throws {
+    try await withApp { app in
+      let openAPITransport = VaporTransport(routesBuilder: app, maxBodySize: .specified("1kb"))
+      try openAPITransport.register(
+        { _, body, _ in
+          // Reading is what trips the ceiling, so the handler has to actually read.
+          if let body {
+            _ = try await [UInt8](collecting: body, upTo: .max)
+          }
+          return (HTTPTypes.HTTPResponse(status: .ok), nil)
+        },
+        method: .post,
+        path: "/upload"
+      )
+
+      try await app.testing(.running) { client in
+        let res = try await client.post("/upload") { request in
+          // No count, so this is framed chunked and carries no `Content-Length`.
+          request.body = .init(stream: { writer in
+            for _ in 0..<4 {
+              try await writer.write(String(repeating: "a", count: 512).utf8)
+            }
+          })
+        }
+        #expect(res.status == .contentTooLarge)
+      }
+    }
+  }
+
+  /// Whether a request carries a body is read off the framing, since nothing is collected up front.
+  /// Pins what a handler sees for a plain GET.
+  @Test
+  func requestWithoutABodyGivesTheHandlerNoBody() async throws {
+    try await withApp { app in
+      let openAPITransport = VaporTransport(routesBuilder: app)
+      let sawBody = Mutex<Bool?>(nil)
+      try openAPITransport.register(
+        { _, body, _ in
+          sawBody.withLock { $0 = body != nil }
+          return (HTTPTypes.HTTPResponse(status: .ok), nil)
+        },
+        method: .get,
+        path: "/ping"
+      )
+
+      try await app.testing(.running) { client in
+        let res = try await client.get("/ping")
+        #expect(res.status == .ok)
+      }
+
+      #expect(sawBody.withLock { $0 } == false)
+    }
+  }
+
+  /// The ceiling is only reached by reading, so a handler that ignores a chunked body never trips
+  /// it — and the server has to drain what was left so the connection serves the next request.
+  ///
+  /// A declared `Content-Length` is different: it is refused up front whether the handler reads or
+  /// not, which is why this uses a chunked body.
+  @Test
+  func unreadChunkedRequestBodyLeavesTheConnectionUsable() async throws {
+    try await withApp { app in
+      let openAPITransport = VaporTransport(routesBuilder: app, maxBodySize: .specified("1kb"))
+      try openAPITransport.register(
+        { _, _, _ in (HTTPTypes.HTTPResponse(status: .ok), nil) },
+        method: .post,
+        path: "/ignore"
+      )
+
+      try await app.testing(.running) { client in
+        // Over the ceiling and chunked, but nothing reads it, so nothing rejects it.
+        let first = try await client.post("/ignore") { request in
+          request.body = .init(stream: { writer in
+            try await writer.write(String(repeating: "a", count: 2048).utf8)
+          })
+        }
+        #expect(first.status == .ok)
+
+        let second = try await client.post("/ignore") { request in
+          request.body = .init(string: "again")
+        }
+        #expect(second.status == .ok)
+      }
+    }
+  }
+
+  /// A path template naming the same parameter twice is a registration mistake; the transport has to
+  /// refuse rather than silently keep one of the values.
+  @Test
+  func duplicatePathParameterIsRejected() async throws {
+    try await withApp { app in
+      let openAPITransport = VaporTransport(routesBuilder: app)
+      try openAPITransport.register(
+        { _, _, _ in (HTTPTypes.HTTPResponse(status: .ok), nil) },
+        method: .get,
+        path: "/{id}/thing/{id}"
+      )
+
+      try await app.testing { client in
+        let res = try await client.get("/1/thing/2")
+        // `VaporTransportError` is not an `AbortError`, so this arrives as a bare 500.
+        #expect(res.status == .internalServerError)
+      }
+    }
+  }
+
+  /// The handler returns the request body as the response body. Nothing buffers it, so reading has
+  /// to still work while the response is written — after the route closure has already returned.
+  @Test
+  func requestBodyCanBeStreamedIntoTheResponse() async throws {
+    try await withApp { app in
+      let openAPITransport = VaporTransport(routesBuilder: app)
+      try openAPITransport.register(
+        { _, body, _ in (HTTPTypes.HTTPResponse(status: .ok), body) },
+        method: .post,
+        path: "/echo"
+      )
+
+      try await app.testing(.running) { client in
+        let res = try await client.post("/echo") { request in
+          request.body = .init(string: "streamed straight through")
+        }
+        #expect(res.status == .ok)
+        try #expect(await res.body.requireString() == "streamed straight through")
+      }
     }
   }
 

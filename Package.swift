@@ -3,14 +3,18 @@
 import PackageDescription
 
 let swiftSettings: [SwiftSetting] = [
-  /// https://github.com/apple/swift-evolution/blob/main/proposals/0335-existential-any.md
-  /// Require `any` for existential types.
+  .strictMemorySafety(),
   .enableUpcomingFeature("ExistentialAny"),
-  /// https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md
-  /// Make `async` functions inherit their caller's isolation. Vapor enables this too, and the two
-  /// modules have to agree: otherwise passing an `async` closure to a Vapor API crosses an
-  /// isolation boundary and is rejected.
+  .enableUpcomingFeature("InternalImportsByDefault"),
+  .enableUpcomingFeature("MemberImportVisibility"),
+  .enableUpcomingFeature("InferIsolatedConformances"),
   .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+  .enableUpcomingFeature("ImmutableWeakCaptures"),
+  .enableExperimentalFeature("SuppressedAssociatedTypesWithDefaults"),
+  .enableExperimentalFeature("LifetimeDependence"),
+  .enableExperimentalFeature("Lifetimes"),
+  .enableUpcomingFeature("LifetimeDependence"),
+  .enableUpcomingFeature("ImmutableWeakCaptures"),
 ]
 
 let package = Package(

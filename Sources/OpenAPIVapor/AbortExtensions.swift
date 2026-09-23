@@ -11,9 +11,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPTypes
-import OpenAPIRuntime
-import Vapor
+public import HTTPTypes
+public import OpenAPIRuntime
+public import Vapor
 #if canImport(FoundationEssentials)
 import FoundationEssentials
 #else
