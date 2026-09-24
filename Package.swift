@@ -30,7 +30,7 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.1", traits: []),
-    .package(url: "https://github.com/vapor/vapor.git", exact: "5.0.0-beta.2"),
+    .package(url: "https://github.com/vapor/vapor.git", from: "5.0.0-beta.2"),
   ],
   targets: [
     .target(
