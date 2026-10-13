@@ -52,6 +52,17 @@ struct VaporRequestBody: Sendable {
                 // A read can come back empty without ending the body, and returning `nil` would say the
                 // body is over — so keep reading until there are bytes or the stream ends.
                 while !finished {
+                    // Something can collect the body after this sequence was made: a middleware after
+                    // `next.respond`, or a handler through the injected `Request`. A collected body
+                    // replays from the start on every `withReader`, so hand it over once instead.
+                    if let collected = request.body.data {
+                        finished = true
+                        // Vapor refuses to collect a stream that was partly read, so this is defensive.
+                        guard bytesRead == 0 else {
+                            throw Abort(.internalServerError, reason: "The request body was collected while it was being streamed.")
+                        }
+                        return collected.isEmpty ? nil : ArraySlice(collected)
+                    }
                     let (chunk, isEnd) = try await request.body.withReader { reader in
                         try await reader.read { span, isEnd -> (Element?, Bool) in
                             // Take the bytes before looking at the flag: a terminal read may carry a final batch.

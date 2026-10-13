@@ -88,10 +88,11 @@ extension [RoutingKit.PathComponent] {
             separator: "/",
             omittingEmptySubsequences: true
         ).map { segment in
-            if segment.first == "{", segment.last == "}" {
-                return .parameter(String(segment.dropFirst().dropLast()))
+            let inner = segment.dropFirst().dropLast()
+            if segment.first == "{", segment.last == "}", !inner.contains("{"), !inner.contains("}") {
+                return .parameter(String(inner))
             } else if segment.contains("{") {
-                // A mixed segment like `/file/{name}.zip`, which `ServerTransport` allows. RoutingKit
+                // A mixed segment like `/file/{name}.zip` or `{name}.{ext}`, which `ServerTransport` allows. RoutingKit
                 // spells these `:` plus the template. A plain `{name}` route alongside still shadows it.
                 return .init(stringLiteral: ":\(segment)")
             } else {

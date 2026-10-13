@@ -506,6 +506,60 @@ struct VaporTransportTests {
         }
     }
 
+    /// A segment with more than one parameter is a partial too, not a single parameter whose name
+    /// happens to start with `{` and end with `}`.
+    @Test(arguments: TestTransport.allCases)
+    func segmentWithSeveralParametersYieldsEach(over transport: TestTransport) async throws {
+        try await withApp { app in
+            let openAPITransport = VaporTransport(routesBuilder: app)
+            try openAPITransport.register(
+                { _, _, metadata in
+                    let name = metadata.pathParameters["name"] ?? ""
+                    let ext = metadata.pathParameters["ext"] ?? ""
+                    return (HTTPTypes.HTTPResponse(status: .ok), HTTPBody("\(name)|\(ext)"))
+                },
+                method: .get,
+                path: "/files/{name}.{ext}"
+            )
+
+            try await app.testing(transport.method) { client in
+                let res = try await client.get("/files/photo.jpg")
+                #expect(res.status == .ok)
+                try #expect(await res.body.requireString() == "photo|jpg")
+            }
+        }
+    }
+
+    /// The body can be collected through the `Request` after the transport made its `HTTPBody` —
+    /// the request injection tutorial hands the handler that `Request`. A collected body replays
+    /// from the start on every read, so the stream has to notice and yield it once.
+    @Test
+    func requestBodyCollectedAfterTheTransportReachesTheHandlerOnce() async throws {
+        try await withApp { app in
+            app.middleware.use(InjectedRequestMiddleware())
+            let openAPITransport = VaporTransport(routesBuilder: app)
+            try openAPITransport.register(
+                { _, body, _ in
+                    _ = try await #require(InjectedRequest.current).body.collect()
+                    let bytes = try await [UInt8](collecting: try #require(body), upTo: 1024)
+                    return (HTTPTypes.HTTPResponse(status: .ok), HTTPBody(bytes))
+                },
+                method: .post,
+                path: "/echo"
+            )
+
+            try await app.testing(.running) { client in
+                let res = try await client.post("/echo") { request in
+                    request.body = .init(stream: { writer in
+                        try await writer.write("hello".utf8)
+                    })
+                }
+                #expect(res.status == .ok)
+                try #expect(await res.body.requireString() == "hello")
+            }
+        }
+    }
+
     /// An error thrown by the handler must reach the client as a failure rather than be swallowed
     /// into a success by the transport.
     @Test
@@ -548,6 +602,20 @@ struct VaporTransportTests {
                 }
                 #expect(res.status == .created)
             }
+        }
+    }
+}
+
+/// The request injection tutorial's pattern: the `Request` reaches the handler through a task local.
+enum InjectedRequest {
+    @TaskLocal
+    static var current: Request? = nil
+}
+
+struct InjectedRequestMiddleware: Middleware {
+    func respond(to request: Request, chainingTo responder: any Responder) async throws -> Response {
+        try await InjectedRequest.$current.withValue(request) {
+            try await responder.respond(to: request)
         }
     }
 }

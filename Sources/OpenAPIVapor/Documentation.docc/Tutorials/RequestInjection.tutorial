@@ -53,7 +53,7 @@
             @Step {
                 Access the value of the `@TaskLocal` to retrieve the `Request`.
                 Then you can use it freely like with normal Vapor route handlers.
-                The body is the one exception: it is non-escapable and bound to the request's lifetime, so it cannot be read from here. The transport has already collected it and passed it to your handler as an `HTTPBody`.
+                The body is the one exception: it is non-escapable and bound to the request's lifetime, so it cannot be read from here. Read it from the `HTTPBody` your handler is given instead.
                 @Code(name: "MyAPIProtocolImpl.swift", file: request-injection.api-protocol.2.swift)
             }
         }
