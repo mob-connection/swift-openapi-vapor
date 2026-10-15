@@ -1,12 +1,10 @@
-# Swift OpenAPI Vapor
-
-@Metadata {
-    @TechnologyRoot()
-}
+# ``OpenAPIVapor``
 
 Generate Swift client and server code from an OpenAPI document.
 
-## Request bodies
+## Overview
+
+### Request bodies
 
 The request body is not collected up front: the `HTTPBody` your handler receives streams from
 the connection and can be iterated once. A body that a middleware already collected is passed
